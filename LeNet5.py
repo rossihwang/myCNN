@@ -2,13 +2,24 @@ import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
 import random
 
+import sys 
+sys.path.append("../") # Parent path of this repo https://github.com/tensorflow/models
+import models.official.mnist.dataset as ds 
+import numpy as np 
+
 tf.set_random_seed(42)
 
-mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+# mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+# print(mnist.train.num_examples) # 55000
+
+batch_size = 100
+mnist_train = ds.train("./").batch(batch_size)
+mnist_test = ds.test("./").batch(1000) # TODO: How to get the whole bunch of the dataset?
+
 
 learning_rate = 0.01
-training_epochs = 15 
-batch_size = 100
+training_epochs = 10
+
 
 
 def main():
@@ -89,7 +100,7 @@ def main():
         logits = tf.matmul(L3, f6_w) + f6_b
 
     with tf.variable_scope("cost"):
-        cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=y))
+        cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=y))
         
     training_op = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
     init = tf.global_variables_initializer()
@@ -98,25 +109,29 @@ def main():
         sess.run(init)
         print("Learning started.")
         for epoch in range(training_epochs):
-            avg_cost = 0
-            total_batch = int(mnist.train.num_examples / batch_size)
-            for i in range(total_batch):
-                #print(i)
-                batch_xs, batch_ys = mnist.train.next_batch(batch_size)
-                # print(batch_xs.shape, batch_ys.shape)
-                c, _ = sess.run([cost, training_op], feed_dict={X:batch_xs, y: batch_ys})
-            # print("Epoch {}".format(epoch))
-            print("Epoch {}, cost {}".format(epoch, c))
-
-         # Test model and check accuracy
+            mnist_train_iter = mnist_train.make_one_shot_iterator()
+            mnist_train_next_batch = mnist_train_iter.get_next()
+            while True:
+                try:
+                    XBatch, yBatch = sess.run(mnist_train_next_batch)
+                    yBatchOhe = np.eye(10)[yBatch]
+                    c, _ = sess.run([cost, training_op], feed_dict={X: XBatch, y: yBatchOhe})
+                except tf.errors.OutOfRangeError:
+                    print("Epoch {}, cost {}".format(epoch, c))
+                    break
+        # Test model and check accuracy
+        mnist_test_data = mnist_test.make_one_shot_iterator()
+        XTest, yTest = sess.run(mnist_test_data.get_next())
+        yTestOhe = np.eye(10)[yTest]
         correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(y, 1))
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-        print("Accuracy:", sess.run(accuracy, feed_dict={X: mnist.test.images, y:mnist.test.labels})) # 0.9713
+        print("Accuracy:", sess.run(accuracy, feed_dict={X: XTest, y: yTestOhe})) 
 
         # Get one and predict
-        r = random.randint(0, mnist.test.num_examples - 1)
-        print("Label:", sess.run(tf.argmax(mnist.test.labels[r:r+1], 1)))
-        print("Prediction: ", sess.run(tf.argmax(logits, 1), feed_dict={X: mnist.test.images[r:r+1]}))
+        # r = random.randint(0, mnist.test.num_examples - 1)
+        r = 100
+        print("Label:", sess.run(tf.argmax(yTestOhe[r:r+1], 1)))
+        print("Prediction: ", sess.run(tf.argmax(logits, 1), feed_dict={X: XTest[r:r+1]}))
 
 if __name__ == "__main__":
     main()
